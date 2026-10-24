@@ -1,6 +1,4 @@
-def main():
-    print("Hello from repoguard!")
-
+from cli.commands import app
 
 if __name__ == "__main__":
-    main()
+    app()

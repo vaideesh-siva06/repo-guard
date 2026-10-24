@@ -1,0 +1,12 @@
+langchain
+langchain-community
+langchain-classic
+langgraph
+langchain-ollama
+pytest
+pydantic
+typer
+rich
+prompt-toolkit
+fastmcp
+uvicorn

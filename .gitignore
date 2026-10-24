@@ -8,3 +8,6 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Repoguard CLI
+*.egg-info/
