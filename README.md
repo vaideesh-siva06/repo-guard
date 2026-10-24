@@ -1,1 +1,1 @@
-# repo-guard
+# RepoGuard
