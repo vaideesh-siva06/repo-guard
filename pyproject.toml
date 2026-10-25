@@ -38,4 +38,7 @@ py-modules = ["main"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["cli*", "llm*", "agent*", "memory*", "rag*", "tools*", "prompts*"]
+include = ["cli*", "llm*", "agent*", "memory*", "rag*", "tools*"]
+
+[tool.setuptools.package-data]
+llm = ["prompt_templates/*.md"]
