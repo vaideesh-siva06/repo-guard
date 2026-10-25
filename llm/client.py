@@ -221,8 +221,3 @@ class LLM():
                     if final:
                         yield {"type": "message", "content": final.content}
                 streamed = False
-
-client = LLM("Personal")
-out = client.agent.invoke({"messages": [("user", "latest Python release")]}, config={"configurable": {"thread_id": "1"}})
-for m in out["messages"]:
-    print(type(m).__name__, getattr(m, "tool_calls", None))

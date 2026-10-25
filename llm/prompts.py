@@ -10,6 +10,7 @@ def load_prompt(filename: str) -> str:
         files("llm")
         .joinpath("prompt_templates", filename)
         .read_text(encoding="utf-8")
+        .replace("{current_date}", current_date)
     )
 
 current_date = datetime.now(

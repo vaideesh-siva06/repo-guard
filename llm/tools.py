@@ -7,8 +7,7 @@ from tools.reranker import rerank_results
 import trafilatura
 from pathlib import Path
 from requests.exceptions import HTTPError, RequestException
-
-PROJECT_ROOT = Path.cwd().resolve()
+from config.config import get_project_root
 
 
 SEARXNG_URL = os.getenv(
@@ -150,7 +149,7 @@ def read_file(file_path: str) -> str:
         file_path: Path relative to the project root, such as 'app/main.py'.
     """
     try:
-        root = PROJECT_ROOT
+        root = get_project_root()
         path = (root / file_path).resolve()
 
         # Prevent reading files outside the project root.
