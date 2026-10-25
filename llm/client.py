@@ -19,10 +19,9 @@ from llm.coding_agent import CodingAgent
 
 TOOL_STATUS = {
     "web_search": "Searching the web...",
-    "list_files": "Looking through your project files...",
     "read_file": "Reading a file...",
-    "edit_file": "Editing a file...",
-    "write_file": "Writing a file...",
+    # "edit_file": "Editing a file...",
+    # "write_file": "Writing a file...",
     "read_page": "Reading a page..."
 }
 
