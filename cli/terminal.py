@@ -96,18 +96,20 @@ def stream_response(user_input: str):
 
     with watch_for_escape() as stop:
         events = llm.stream(user_input)
+
         try:
             with Live(
                 Markdown(response + "▌"),
                 console=console,
                 refresh_per_second=8,
                 screen=False,
-                transient=True,
-                vertical_overflow="visible",
+                transient=False,  # Keep final live output
+                vertical_overflow="ellipsis",
             ) as live:
                 for event in events:
                     if stop.is_set():
                         break
+
                     if not isinstance(event, dict):
                         continue
 
@@ -117,14 +119,18 @@ def stream_response(user_input: str):
                     elif event["type"] == "status":
                         status = f" *{event['content']}...*"
 
-                    live.update(Markdown(response + status + "▌"), refresh=True)
+                    live.update(
+                        Markdown(response + status + "▌"),
+                        refresh=True,
+                    )
+
+                if stop.is_set():
+                    response += "\n\n*[stopped]*"
+
+                live.update(Markdown(response), refresh=True)
+
         finally:
-            events.close()  # stops the generator and the underlying model request
-
-    if stop.is_set():
-        response += "\n\n*[stopped]*"
-
-    console.print(Markdown(response))
+            events.close()
 
 def run_chat():
     """Chat interface for local coding agent"""
@@ -161,7 +167,7 @@ def run_chat():
             title="[bold white]RepoGuard[/bold white]\n",
             subtitle="[dim]Local-first coding agent[/dim]",
             border_style="green",
-            padding=(1, 3, 10, 0),
+            padding=(1, 3, 3, 0),
             expand=True,
         )
     )

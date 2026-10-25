@@ -41,7 +41,7 @@ def web_search(query: str) -> str:
         ranked_results = rerank_results(
             query=query,
             results=results[:20],
-            top_k=5,
+            top_k=20,
         )
 
         formatted_results = []

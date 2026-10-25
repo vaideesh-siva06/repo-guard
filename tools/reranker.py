@@ -1,25 +1,30 @@
-from sentence_transformers import CrossEncoder
+from FlagEmbedding import FlagReranker
 
-# Loaded once
-reranker = CrossEncoder(
-    "cross-encoder/ms-marco-MiniLM-L-6-v2"
+reranker = FlagReranker(
+    "BAAI/bge-reranker-v2-m3",
+    use_fp16=False,
 )
 
-def rerank_results(query: str, results: list[dict], top_k: int = 5):
+def rerank_results(
+    query: str,
+    results: list[dict],
+    top_k: int = 20,
+):
     if not results:
         return []
 
     pairs = [
-        (
+        [
             query,
-            f"Title: {r.get('title', '')}\n"
-            f"Content: {r.get('content', '')}"
-        )
-
+            (
+                f"Title: {r.get('title', '')}\n"
+                f"Content: {r.get('content', r.get('snippet', ''))}"
+            ),
+        ]
         for r in results
     ]
 
-    scores = reranker.predict(pairs)
+    scores = reranker.compute_score(pairs)
 
     ranked = sorted(
         zip(results, scores),
