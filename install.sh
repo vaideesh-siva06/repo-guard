@@ -2,7 +2,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="git+https://github.com/vaideeshsiva-06/repo-guard.git"
+REPO_URL="git+https://github.com/vaideesh-siva06/repo-guard.git"
 
 echo "================================"
 echo "       RepoGuard Installer"
