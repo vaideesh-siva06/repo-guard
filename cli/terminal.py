@@ -21,6 +21,7 @@ import contextlib
 import threading
 import select
 import os
+import traceback
 
 try:
     import termios
@@ -128,7 +129,8 @@ def stream_response(user_input: str):
                     response += "\n\n*[stopped]*"
 
                 live.update(Markdown(response), refresh=True)
-
+        except Exception:
+            traceback.print_exc()
         finally:
             events.close()
 
