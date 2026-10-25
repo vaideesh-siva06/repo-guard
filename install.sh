@@ -1,80 +1,77 @@
-
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="git+https://github.com/vaideesh-siva06/repo-guard.git"
+BRANCH="${REPOGUARD_BRANCH:-development}"
+REPO_URL="git+https://github.com/vaideesh-siva06/repo-guard.git@${BRANCH}"
+MIN_PY="3.13"   # keep in sync with requires-python in pyproject.toml
 
 echo "================================"
 echo "       RepoGuard Installer"
 echo "================================"
 
-# 1. Check Python
+# 1. Python
 if ! command -v python3 >/dev/null 2>&1; then
     echo "Error: Python 3 is required."
     echo "Install Python from https://www.python.org/downloads/"
     exit 1
 fi
 
-python3 - <<'PY'
-import sys
+PY="$(command -v python3)"
 
-if sys.version_info < (3, 11):
-    print("Error: RepoGuard requires Python 3.11 or newer.")
-    sys.exit(1)
-PY
-
-# 2. Check pip
-if ! python3 -m pip --version >/dev/null 2>&1; then
-    echo "Error: pip is unavailable for this Python installation."
+if ! "$PY" -c "import sys; sys.exit(0 if sys.version_info >= (${MIN_PY/./,}) else 1)"; then
+    echo "Error: RepoGuard requires Python ${MIN_PY} or newer."
+    "$PY" --version
     exit 1
 fi
 
-# 3. Check Git
+# 2. Git
 if ! command -v git >/dev/null 2>&1; then
-    echo "Error: Git is required to install RepoGuard from GitHub."
+    echo "Error: Git is required."
     echo "Install Git from https://git-scm.com/downloads"
     exit 1
 fi
 
-# 4. Check Ollama
+# 3. Ollama (warn only)
 if command -v ollama >/dev/null 2>&1; then
-    echo "Ollama is installed."
-
     if ollama list >/dev/null 2>&1; then
-        echo "Ollama is responding."
+        echo "Ollama is installed and responding."
     else
-        echo "Warning: Ollama may not be running."
-        echo "Start Ollama before using RepoGuard."
+        echo "Warning: Ollama is installed but not running. Start it before using RepoGuard."
     fi
 else
-    echo "Warning: Ollama is not installed."
-    echo "Install it from https://ollama.com/download"
+    echo "Warning: Ollama is not installed. Get it at https://ollama.com/download"
 fi
 
-# 5. Install RepoGuard in an isolated environment
+# 4. pipx
 if ! command -v pipx >/dev/null 2>&1; then
     echo "Installing pipx..."
-
-    python3 -m pip install --user pipx
-    python3 -m pipx ensurepath
-
-    # Make pipx available in this installer process when possible.
-    USER_BIN="$(python3 -m site --user-base)/bin"
+    if command -v brew >/dev/null 2>&1; then
+        brew install pipx
+    elif "$PY" -m pip --version >/dev/null 2>&1; then
+        "$PY" -m pip install --user pipx
+    else
+        echo "Error: could not install pipx (no brew, no pip)."
+        exit 1
+    fi
+    USER_BIN="$("$PY" -m site --user-base)/bin"
     export PATH="$USER_BIN:$HOME/.local/bin:$PATH"
 fi
 
-if command -v pipx >/dev/null 2>&1; then
-    pipx install --force "$REPO_URL"
-else
-    echo "Error: pipx was installed but is not available in PATH."
+if ! command -v pipx >/dev/null 2>&1; then
+    echo "Error: pipx was installed but is not on PATH."
     echo "Open a new terminal and run:"
-    echo "  pipx install \"$REPO_URL\""
+    echo "  pipx install --python python3 \"$REPO_URL\""
     exit 1
 fi
+
+# 5. Install RepoGuard
+echo "Installing RepoGuard (first install can take a few minutes; it pulls in torch)..."
+pipx install --force --python "$PY" "$REPO_URL"
+pipx ensurepath >/dev/null 2>&1 || true
 
 echo ""
 echo "================================"
 echo "RepoGuard installation complete!"
 echo "================================"
-echo "Try: repoguard --help"
-echo "Then navigate to a project and run: repoguard"
+echo "Open a NEW terminal, then run: repoguard --help"
+echo "Then go to a project and run: repoguard"

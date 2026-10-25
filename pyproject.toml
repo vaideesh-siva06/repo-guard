@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "repoguard"
 version = "0.1.0"
-description = "Add your description here"
+description = "A local-first AI coding agent"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -36,4 +36,5 @@ repoguard = "cli.commands:app"
 py-modules = ["main"]
 
 [tool.setuptools.packages.find]
+where = ["."]
 include = ["cli*", "llm*", "agent*", "memory*", "rag*", "tools*"]
