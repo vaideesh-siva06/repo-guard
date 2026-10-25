@@ -10,3 +10,8 @@ rich
 prompt-toolkit
 fastmcp
 uvicorn
+pillow
+rich-pixels
+CairoSVG
+ddgs
+sentence-transformers
