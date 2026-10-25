@@ -5,6 +5,10 @@ import requests
 from langchain_core.tools import tool
 from tools.reranker import rerank_results
 import trafilatura
+from pathlib import Path
+from requests.exceptions import HTTPError, RequestException
+
+PROJECT_ROOT = Path.cwd().resolve()
 
 
 SEARXNG_URL = os.getenv(
@@ -105,16 +109,63 @@ def web_search(
 
 @tool
 def read_page(url: str) -> str:
-    """Open a web page and return its main text. Use after web_search when
-    a snippet is not enough (schedules, tables, articles, documentation)."""
+    """Open a web page and return its main text."""
     try:
-        r = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
-        r.raise_for_status()
-        text = trafilatura.extract(
-            r.text, include_tables=True, include_links=False
+        response = requests.get(
+            url,
+            timeout=15,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/131.0.0.0 Safari/537.36"
+                )
+            },
         )
-    except Exception as e:
-        return f"Could not read the page ({type(e).__name__})."
+        response.raise_for_status()
+
+        text = trafilatura.extract(
+            response.text,
+            include_tables=True,
+            include_links=False,
+        )
+
+    except HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else "unknown"
+        return f"HTTP error {status} while reading {url}"
+
+    except RequestException as exc:
+        return f"Request failed: {type(exc).__name__}: {exc}"
+
     if not text:
-        return "The page had no readable text (it may need JavaScript)."
+        return "The page returned no extractable text."
+
     return text[:6000]
+
+@tool
+def read_file(file_path: str) -> str:
+    """Read a UTF-8 text file from the project repository.
+
+    Args:
+        file_path: Path relative to the project root, such as 'app/main.py'.
+    """
+    try:
+        root = PROJECT_ROOT
+        path = (root / file_path).resolve()
+
+        # Prevent reading files outside the project root.
+        if not path.is_relative_to(root):
+            return "Error: Access outside the project directory is not allowed."
+
+        if not path.exists():
+            return f"Error: File not found: {file_path}"
+
+        if not path.is_file():
+            return f"Error: Not a file: {file_path}"
+
+        return path.read_text(encoding="utf-8")
+
+    except UnicodeDecodeError:
+        return "Error: This file is not a readable UTF-8 text file."
+    except OSError as exc:
+        return f"Error reading file: {exc}"

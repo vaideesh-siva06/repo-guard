@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from langchain_core.exceptions import OutputParserException
 from langchain_core.runnables import RunnableLambda
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from llm.coding_agent import CodingAgent
 
 TOOL_STATUS = {
     "web_search": "Searching the web...",
@@ -59,7 +60,7 @@ class LLM():
         self.memory = InMemorySaver()
         self.config = {"configurable": {"thread_id": self.conversation_id}}
         self.agent = self._create_agent(self.model, system_prompts["GENERAL"], tools=self.tools)
-        self.coding_agent = self._create_agent(self.coding_model, system_prompts["CODING"], tools=self.tools)
+        self.coding_agent = CodingAgent()
         self.orchestrator_model = self.model.with_structured_output(
             Decision,
             method="json_schema"
@@ -80,7 +81,7 @@ class LLM():
         graph = StateGraph(State)
 
         graph.add_node("orchestrator_agent", self.run_orchestrator)
-        graph.add_node("coding_agent", self.coding_agent)
+        graph.add_node("coding_agent", self.coding_agent.agent)
         graph.add_node("design_agent", self.design_agent)
         graph.add_node("general_agent", self.agent)
 
@@ -184,13 +185,16 @@ class LLM():
                 for m in msgs:
                     for call in getattr(m, "tool_calls", None) or []:
                         key = call.get("id") or str(call)
+                        print(f"[DEBUG] Tool call: {call['name']} | Args: {call.get('args')}")
                         if key not in seen_calls:
                             seen_calls.add(key)
+                            status = TOOL_STATUS.get(
+                                call["name"], f"Using {call['name']}..."
+                            )
+
                             yield {
                                 "type": "status",
-                                "content": TOOL_STATUS.get(
-                                    call["name"], f"Using {call['name']}..."
-                                ),
+                                "content": f"{status}",
                             }
                     if inner and getattr(m, "type", None) == "tool":
                         yield {"type": "tool_result", "tool": m.name}
