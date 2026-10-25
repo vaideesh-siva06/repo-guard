@@ -11,43 +11,120 @@ from rich.markdown import Markdown
 from rich.syntax import Syntax
 import pyperclip
 import re
+from cli.theme import theme
+from prompt_toolkit import PromptSession
+from prompt_toolkit.history import InMemoryHistory
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.filters import Condition
+import sys
+import contextlib
+import threading
+import select
+import os
 
-console = Console()
+try:
+    import termios
+except ImportError:  # Windows
+    termios = None
+
+@contextlib.contextmanager
+def watch_for_escape():
+    """Hide keystrokes while streaming and yield an Event that is set when Esc is pressed."""
+    stop = threading.Event()
+
+    if termios is None or not sys.stdin.isatty():
+        yield stop
+        return
+
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    new = termios.tcgetattr(fd)
+    new[3] &= ~(termios.ECHO | termios.ICANON)
+    done = threading.Event()
+
+    def reader():
+        while not done.is_set():
+            if not select.select([fd], [], [], 0.05)[0]:
+                continue
+            ch = os.read(fd, 1)
+            if ch == b"\x1b":
+                if select.select([fd], [], [], 0.05)[0]:
+                    os.read(fd, 32)   # arrow key / escape sequence: swallow it
+                else:
+                    stop.set()        # lone Esc
+
+    t = threading.Thread(target=reader, daemon=True)
+    try:
+        termios.tcsetattr(fd, termios.TCSADRAIN, new)
+        t.start()
+        yield stop
+    finally:
+        done.set()
+        t.join(timeout=0.5)
+        termios.tcflush(fd, termios.TCIFLUSH)
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+@contextlib.contextmanager
+def suppress_input():
+    """Hide and discard keystrokes (arrow keys etc.) while the agent streams."""
+    if termios is None or not sys.stdin.isatty():
+        yield
+        return
+
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    new = termios.tcgetattr(fd)
+    new[3] &= ~(termios.ECHO | termios.ICANON)  # index 3 = local flags
+    try:
+        termios.tcsetattr(fd, termios.TCSADRAIN, new)
+        yield
+    finally:
+        termios.tcflush(fd, termios.TCIFLUSH)  # drop anything typed during streaming
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+console = Console(theme=theme, force_terminal=True)
 width = int(console.width * 0.7)
 llm = LLM(model_name="CODING")
-    
+session = PromptSession(
+    history=InMemoryHistory()
+)
 
 def stream_response(user_input: str):
     response = "RepoGuard > "
     status = ""
 
-    with Live(
-        Markdown(response),
-        console=console,
-        refresh_per_second=8,
-        screen=False,
-        transient=False,
-    ) as live:
-        live.update(Markdown(response + "▌"), refresh=True)
+    with watch_for_escape() as stop:
+        events = llm.stream(user_input)
+        try:
+            with Live(
+                Markdown(response + "▌"),
+                console=console,
+                refresh_per_second=8,
+                screen=False,
+                transient=True,
+                vertical_overflow="visible",
+            ) as live:
+                for event in events:
+                    if stop.is_set():
+                        break
+                    if not isinstance(event, dict):
+                        continue
 
-        for event in llm.stream(user_input):
-            if not isinstance(event, dict):
-                continue
+                    if event["type"] == "message":
+                        response += event["content"]
+                        status = ""
+                    elif event["type"] == "status":
+                        status = f" *{event['content']}...*"
 
-            if event["type"] == "message":
-                response += event["content"]
-                status = ""
+                    live.update(Markdown(response + status + "▌"), refresh=True)
+        finally:
+            events.close()  # stops the generator and the underlying model request
 
-            elif event["type"] == "status":
-                status = f" *{event['content']}...*"
+    if stop.is_set():
+        response += "\n\n*[stopped]*"
 
-            # elif event["type"] == "tool_result":
-            #     status = f" *Finished: {event['tool']}*"
-
-            display = response + status
-            live.update(Markdown(display), refresh=True)
-
-        live.update(Markdown(response), refresh=True)
+    console.print(Markdown(response))
 
 def run_chat():
     """Chat interface for local coding agent"""
@@ -84,7 +161,7 @@ def run_chat():
             title="[bold white]RepoGuard[/bold white]\n",
             subtitle="[dim]Local-first coding agent[/dim]",
             border_style="green",
-            padding=(1, 3),
+            padding=(1, 3, 10, 0),
             expand=True,
         )
     )
@@ -93,7 +170,7 @@ def run_chat():
 
     while True:
         try:
-            query = console.input("[white]You > [/white]")
+            query = session.prompt("You > ")
             console.print()
 
             if query.strip().lower() in {"exit", "quit"}:
