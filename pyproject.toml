@@ -38,4 +38,4 @@ py-modules = ["main"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["cli*", "llm*", "agent*", "memory*", "rag*", "tools*"]
+include = ["cli*", "llm*", "agent*", "memory*", "rag*", "tools*", "prompts*"]
