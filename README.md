@@ -5,3 +5,5 @@ Installation Command:
 
 Uninstallation Command:
 `uv tool uninstall repoguard`
+
+Note: Please make sure Ollama is installed. Get it at https://ollama.com/download
