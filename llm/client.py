@@ -19,11 +19,18 @@ from llm.coding_agent import CodingAgent
 from langgraph.types import Command
 
 TOOL_STATUS = {
+    # Filesystem tools
+    "search_files": "Searching files...",
+    "list_directory": "Listing directory...",
+    "directory_tree": "Inspecting project structure...",
+    "read_text_file": "Reading file...",
+    "read_multiple_files": "Reading files...",
+    "edit_file": "Preparing file edit...",
+    "write_file": "Writing file...",
+
+    # Web tools
     "web_search": "Searching the web...",
-    "read_file": "Reading a file...",
-    # "edit_file": "Editing a file...",
-    # "write_file": "Writing a file...",
-    "read_page": "Reading a page..."
+    "read_page": "Reading a webpage...",
 }
 
 class Decision(BaseModel):
