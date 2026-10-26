@@ -33,6 +33,19 @@ TOOL_STATUS = {
     "read_page": "Reading a webpage...",
 }
 
+def get_status(name: str) -> str:
+    # 1. Exact match: "read_text_file" -> "Reading file..."
+    if name in TOOL_STATUS:
+        return TOOL_STATUS[name]
+
+    # 2. Prefixed match: "filemcpserver_read_text_file" ends with "read_text_file"
+    for base, text in TOOL_STATUS.items():
+        if name.endswith(base):
+            return text
+
+    # 3. Fallback for tools you haven't listed
+    return f"Using {name}..."
+
 class Decision(BaseModel):
     next: Literal["GENERAL", "CODING", "DESIGN", "FINISH"]
     task: str = Field(
