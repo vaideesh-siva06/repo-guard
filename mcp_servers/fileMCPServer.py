@@ -1,4 +1,5 @@
 from langchain.mcp import MCPAdapter
+from config import get_project_root
 
 class FilesystemMCP:
     def __init__(self):
@@ -13,7 +14,7 @@ class FilesystemMCP:
                     "args": [
                         "-y",
                         "@modelcontextprotocol/server-filesystem",
-                        "/Users/vaideeshsiva/Desktop/RepoGuard",
+                        str(get_project_root()),
                     ],
                 }
             }

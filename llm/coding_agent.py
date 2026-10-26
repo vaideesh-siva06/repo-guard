@@ -26,9 +26,6 @@ class CodingAgent:
             tools=self.tools,
         )
 
-        print("TOOLS")
-        print(self.tools)
-
         return self
 
     def _create_agent(self, model, agent_system_prompt: str, tools):

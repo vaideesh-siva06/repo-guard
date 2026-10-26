@@ -104,25 +104,6 @@ class LLM():
     async def start(self):
         self.coding_agent = await CodingAgent().start()
         self.graph = self._build_graph()
-
-        result = await self.coding_agent.agent.ainvoke(
-            {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": "List the files in the rag directory using list_directory."
-                    }
-                ]
-            },
-            config={"configurable": {"thread_id": "debug-tool-call"}},
-        )
-
-        for message in result["messages"]:
-            print(f"\n--- {type(message).__name__} ---")
-            print("Content:", message.content)
-            print("Tool calls:", getattr(message, "tool_calls", []))
-            print("Name:", getattr(message, "name", None))
-
             
         return self
 
