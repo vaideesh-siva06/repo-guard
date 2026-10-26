@@ -5,6 +5,8 @@ from langchain.agents import create_agent
 import uuid
 from langgraph.checkpoint.memory import InMemorySaver
 from mcp_servers.fileMCPServer import FilesystemMCP
+from langchain.agents.middleware import HumanInTheLoopMiddleware
+
 class CodingAgent:
     def __init__(self):
         self.coding_model = ChatOllama(model="qwen3-coder")
@@ -33,7 +35,15 @@ class CodingAgent:
             model=model,
             system_prompt=agent_system_prompt,
             tools=tools,
-            checkpointer=self.memory
+            checkpointer=self.memory,
+            middleware=[
+                HumanInTheLoopMiddleware(
+                    interrupt_on={
+                        "edit_file": True,
+                        "write_file": True
+                    }
+                )
+            ]
         )
 
     async def close(self):

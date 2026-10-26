@@ -144,6 +144,9 @@ class LLM():
             config=self.coding_agent.config,
         )
 
+        if result.get("__interrupt__"):
+            return result
+
         print("[DEBUG] >>> CODING AGENT FINISHED <<<")
         print("[DEBUG] Response:",
             result["messages"][-1].content[:500])
