@@ -18,3 +18,5 @@ sentence-transformers
 FlagEmbedding
 trafilatura
 chroma
+langchain-mcp-adapters
+langchain-mcp

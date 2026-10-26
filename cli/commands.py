@@ -1,6 +1,7 @@
 import typer
-from cli.terminal import run_chat
+from cli.terminal import main
 from config import set_project_root
+import asyncio
 
 app = typer.Typer()
 
@@ -13,4 +14,4 @@ def initialize() -> None:
 
 @app.command()
 def chat():
-    run_chat()
+    asyncio.run(main())

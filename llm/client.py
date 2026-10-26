@@ -71,19 +71,60 @@ class LLM():
         self.model_name = model_name
         self.model = ChatOllama(model="qwen3:8b")
         self.coding_model = ChatOllama(model="qwen3-coder")
-        self.conversation_id = uuid.uuid4()
+
+        self.conversation_id = str(uuid.uuid4())
         self.tools = [web_search, read_page, read_file]
         self.memory = InMemorySaver()
-        self.config = {"configurable": {"thread_id": self.conversation_id}}
-        self.agent = self._create_agent(self.model, system_prompts["GENERAL"], tools=self.tools)
-        self.coding_agent = CodingAgent().agent
+        self.config = {
+            "configurable": {"thread_id": self.conversation_id}
+        }
+
+        self.agent = self._create_agent(
+            self.model,
+            system_prompts["GENERAL"],
+            tools=self.tools,
+        )
+
+        self.coding_agent = None
+
         self.orchestrator_model = self.model.with_structured_output(
             Decision,
-            method="json_schema"
+            method="json_schema",
         )
-        self.design_agent = self._create_agent(self.model, system_prompts["DESIGN"], tools=self.tools)
-        self.graph = self._build_graph()
+
+        self.design_agent = self._create_agent(
+            self.model,
+            system_prompts["DESIGN"],
+            tools=self.tools,
+        )
+
+        self.graph = None
         self.orchestrator_chain = self._build_orchestrator_chain()
+
+    async def start(self):
+        self.coding_agent = await CodingAgent().start()
+        self.graph = self._build_graph()
+
+        result = await self.coding_agent.agent.ainvoke(
+            {
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "List the files in the rag directory using list_directory."
+                    }
+                ]
+            },
+            config={"configurable": {"thread_id": "debug-tool-call"}},
+        )
+
+        for message in result["messages"]:
+            print(f"\n--- {type(message).__name__} ---")
+            print("Content:", message.content)
+            print("Tool calls:", getattr(message, "tool_calls", []))
+            print("Name:", getattr(message, "name", None))
+
+            
+        return self
 
     def _create_agent(self, model, agent_system_prompt: str, tools):
         return create_agent(
@@ -93,7 +134,7 @@ class LLM():
             checkpointer=self.memory
         )
 
-    def coding_agent_node(self, state: State):
+    async def coding_agent_node(self, state: State):
         print("[DEBUG] >>> CODING NODE ENTERED <<<")
 
         print("[DEBUG] Original request:",
@@ -104,7 +145,7 @@ class LLM():
 
         print("[DEBUG] Invoking coding agent now...")
 
-        result = self.coding_agent.invoke(
+        result = await self.coding_agent.agent.ainvoke(
             {
                 "messages": [
                     HumanMessage(content=f"""
@@ -128,10 +169,10 @@ class LLM():
 
         return {"messages": result["messages"]}
 
-    def design_agent_node(self, state: State):
+    async def design_agent_node(self, state: State):
         print("[DEBUG] >>> DESIGN AGENT CALLED <<<")
 
-        result = self.design_agent.invoke(state)
+        result = await self.design_agent.ainvoke(state)
 
         # Adapt this extraction to your agent's actual return format.
         design_output = result.get("design_output", "")
@@ -238,7 +279,7 @@ class LLM():
         return response['messages'][-1].content
 
     
-    def stream(self, query: str):
+    async def stream(self, query: str):
         streamed = False
         seen_calls = set()
 
@@ -251,7 +292,7 @@ class LLM():
             "next": "GENERAL",
         }
 
-        for ns, mode, chunk in self.graph.stream(
+        async for ns, mode, chunk in self.graph.astream(
             initial_state,
             config=self.config,
             stream_mode=["messages", "updates"],
@@ -317,3 +358,11 @@ class LLM():
                     if final:
                         yield {"type": "message", "content": final.content}
                 streamed = False
+
+    async def close(self):
+        if self.coding_agent is not None:
+            await self.coding_agent.close()
+
+        self.agent = None
+        self.design_agent = None
+        self.coding_agent = None
