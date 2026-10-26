@@ -339,20 +339,39 @@ class LLM():
                 msgs = update.get("messages", [])
                 msgs = msgs if isinstance(msgs, list) else [msgs]
 
-                for m in msgs:
-                    for call in getattr(m, "tool_calls", None) or []:
-                        key = call.get("id") or str(call)
+                text_since_tool = False   # has the model written text since the last tool boundary?
+                needs_break = False       # a tool call happened after text, so break before the next text
 
+                for m in msgs:
+                    # --- tool calls ---
+                    for call in getattr(m, "tool_calls", None) or []:
+                        name = call.get("name")
+                        if not name:
+                            continue
+                        key = call.get("id") or f"{name}:{call.get('args')}"
                         if key not in seen_calls:
                             seen_calls.add(key)
-                            status = TOOL_STATUS.get(
-                                call["name"],
-                                f"Using {call['name']}..."
-                            )
-                            yield {"type": "status", "content": status}
+                            if text_since_tool:
+                                needs_break = True
+                                text_since_tool = False
+                            yield {"type": "status", "content": get_status(name)}
 
+                    # --- tool results ---
                     if inner and getattr(m, "type", None) == "tool":
                         yield {"type": "tool_result", "tool": m.name}
+                        continue
+
+                    # --- assistant text ---
+                    if getattr(m, "type", None) in ("ai", "AIMessageChunk"):
+                        text = m.content if isinstance(m.content, str) else "".join(
+                            b.get("text", "") for b in m.content if isinstance(b, dict)
+                        )
+                        if text:
+                            if needs_break:
+                                yield {"type": "token", "content": "\n\n"}
+                                needs_break = False
+                            text_since_tool = True
+                            yield {"type": "token", "content": text}
 
                 if inner:
                     continue
