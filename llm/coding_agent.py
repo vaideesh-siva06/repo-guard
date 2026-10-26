@@ -19,6 +19,7 @@ class CodingAgent:
         self.agent = self._create_agent(self.coding_model, system_prompts["CODING"], tools=self.tools)
 
     async def start(self):
+
         self.file_tools = await self.file_system.start()
         self.tools.extend(self.file_tools)
 
@@ -36,14 +37,7 @@ class CodingAgent:
             system_prompt=agent_system_prompt,
             tools=tools,
             checkpointer=self.memory,
-            middleware=[
-                HumanInTheLoopMiddleware(
-                    interrupt_on={
-                        "edit_file": True,
-                        "write_file": True
-                    }
-                )
-            ]
+            # h
         )
 
     async def close(self):

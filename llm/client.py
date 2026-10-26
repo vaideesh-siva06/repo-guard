@@ -16,6 +16,7 @@ from langchain_core.exceptions import OutputParserException
 from langchain_core.runnables import RunnableLambda
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from llm.coding_agent import CodingAgent
+from langgraph.types import Command
 
 TOOL_STATUS = {
     "web_search": "Searching the web...",
@@ -144,8 +145,8 @@ class LLM():
             config=self.coding_agent.config,
         )
 
-        if result.get("__interrupt__"):
-            return result
+        # if result.get("__interrupt__"):
+        #     return result
 
         print("[DEBUG] >>> CODING AGENT FINISHED <<<")
         print("[DEBUG] Response:",
@@ -262,67 +263,93 @@ class LLM():
 
         return response['messages'][-1].content
 
+    async def resume_approval(self, decisions):
+        async for ns, mode, chunk in self.graph.astream(
+            Command(resume={"decisions": decisions}),
+            config=self.config,  # same thread_id and checkpointer
+            stream_mode=["messages", "updates"],
+            subgraphs=True,
+        ):
+            # Reuse your existing stream-event handling here,
+            # or forward events to your CLI.
+            yield ns, mode, chunk
+
     
-    async def stream(self, query: str):
+    async def stream(self, query: str | None = None, decisions=None):
         streamed = False
         seen_calls = set()
 
-        initial_state = {
-            "messages": [{"role": "user", "content": query}],
-            "original_request": query,
-            "task": query,
-            "design_output": "",
-            "needs_coding": False,
-            "next": "GENERAL",
-        }
+        if decisions is not None:
+            # Resume the paused graph instead of starting a new request.
+            graph_input = Command(
+                resume={"decisions": decisions}
+            )
+        else:
+            if query is None:
+                raise ValueError("query is required for a new request")
+
+            graph_input = {
+                "messages": [{"role": "user", "content": query}],
+                "original_request": query,
+                "task": query,
+                "design_output": "",
+                "needs_coding": False,
+                "next": "GENERAL",
+            }
 
         async for ns, mode, chunk in self.graph.astream(
-            initial_state,
+            graph_input,
             config=self.config,
             stream_mode=["messages", "updates"],
             subgraphs=True,
         ):
-            inner = bool(ns)  # True for events from inside a worker agent
+            inner = bool(ns)
 
             if mode == "messages":
                 message, metadata = chunk
+
                 if metadata.get("langgraph_node") == "orchestrator_agent":
                     continue
+
                 if isinstance(message, AIMessageChunk) and message.content:
                     streamed = True
                     yield {"type": "message", "content": message.content}
+
                 continue
 
-            # mode == "updates"
             for node_name, update in chunk.items():
-                if node_name == "__interrupt__" or not isinstance(update, dict):
+                if node_name == "__interrupt__":
+                    # Preserve the actual interrupt objects for inspection.
+                    yield {
+                        "type": "approval_required",
+                        "interrupts": update,
+                    }
+                    continue
+
+                if not isinstance(update, dict):
                     continue
 
                 msgs = update.get("messages", [])
                 msgs = msgs if isinstance(msgs, list) else [msgs]
 
-                # Tool status: fires live from the inner agent, deduped by call id.
                 for m in msgs:
                     for call in getattr(m, "tool_calls", None) or []:
                         key = call.get("id") or str(call)
-                        print(f"[DEBUG] Tool call: {call['name']} | Args: {call.get('args')}")
+
                         if key not in seen_calls:
                             seen_calls.add(key)
                             status = TOOL_STATUS.get(
-                                call["name"], f"Using {call['name']}..."
+                                call["name"],
+                                f"Using {call['name']}..."
                             )
+                            yield {"type": "status", "content": status}
 
-                            yield {
-                                "type": "status",
-                                "content": f"{status}",
-                            }
                     if inner and getattr(m, "type", None) == "tool":
                         yield {"type": "tool_result", "tool": m.name}
 
                 if inner:
-                    continue  # the outer update repeats these messages
+                    continue
 
-                # Top-level updates
                 if node_name == "orchestrator_agent":
                     if update.get("next") == "FINISH":
                         for m in msgs:
@@ -330,19 +357,20 @@ class LLM():
                                 yield {"type": "message", "content": m.content}
                     continue
 
-                # A worker finished: show its answer if no tokens streamed.
                 if not streamed:
                     final = next(
-                        (m for m in reversed(msgs)
-                        if isinstance(m, AIMessage)
-                        and m.content
-                        and not getattr(m, "tool_calls", None)),
+                        (
+                            m for m in reversed(msgs)
+                            if isinstance(m, AIMessage)
+                            and m.content
+                            and not getattr(m, "tool_calls", None)
+                        ),
                         None,
                     )
                     if final:
                         yield {"type": "message", "content": final.content}
-                streamed = False
 
+                streamed = False
     async def close(self):
         if self.coding_agent is not None:
             await self.coding_agent.close()

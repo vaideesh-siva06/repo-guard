@@ -116,6 +116,20 @@ async def main():
                         if not isinstance(event, dict):
                             continue
 
+                        if event["type"] == "approval_required":
+                            print("\nProposed operation:")
+                            print(event["content"])
+
+                            choice = input("Approve change? [y/n]: ").strip().lower()
+
+                            decision = (
+                                {"type": "approve"}
+                                if choice == "y"
+                                else {
+                                    "type": "reject",
+                                    "message": "User rejected this change."
+                                }
+                            )
                         if event["type"] == "message":
                             response += event["content"]
                             status = ""
