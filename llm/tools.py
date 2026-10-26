@@ -126,8 +126,13 @@ def read_page(url: str) -> str:
         text = trafilatura.extract(
             response.text,
             include_tables=True,
-            include_links=False,
+            include_links=True,
         )
+
+        print("Status:", response.status_code)
+        print("Final URL:", response.url)
+        print("HTML length:", len(response.text))
+        print(response.text[:1000])
 
     except HTTPError as exc:
         status = exc.response.status_code if exc.response is not None else "unknown"

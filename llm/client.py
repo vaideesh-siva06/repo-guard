@@ -4,7 +4,7 @@ from typing import Any, Annotated, TypedDict
 from langgraph.checkpoint.memory import InMemorySaver
 import uuid
 from llm.prompts import system_prompts
-from llm.tools import web_search, read_page
+from llm.tools import web_search, read_page, read_file
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langchain.messages import AIMessageChunk, ToolCallChunk
@@ -26,7 +26,7 @@ TOOL_STATUS = {
 }
 
 class Decision(BaseModel):
-    next: Literal["CODING", "DESIGN", "GENERAL", "FINISH"]
+    next: Literal["GENERAL", "CODING", "DESIGN", "FINISH"]
     task: str = Field(
         default="",
         description="Only when delegating: the full instruction for the specialist. Empty for FINISH.",
@@ -35,10 +35,27 @@ class Decision(BaseModel):
         default="",
         description="Only for FINISH: the final reply to the user. Empty when delegating.",
     )
+    needs_coding: bool = Field(
+        default=False,
+        description=(
+            "True when a DESIGN task also requires implementation "
+            "by the coding agent."
+        ),
+    )
 
 class State(TypedDict):
     messages: Annotated[list, add_messages]
     next: Literal["GENERAL", "CODING", "DESIGN", "FINISH"]
+    task: str
+    original_request: str
+    design_output: str
+    needs_coding: bool
+
+def after_design(state: State) -> str:
+    needs_coding = state.get("needs_coding", False)
+    print(f"[DEBUG] Needs coding: {needs_coding}")
+
+    return "CODING" if needs_coding else "ORCHESTRATOR"
 
 def route_next(state: State) -> str:
         destination = state.get("next")
@@ -55,11 +72,11 @@ class LLM():
         self.model = ChatOllama(model="qwen3:8b")
         self.coding_model = ChatOllama(model="qwen3-coder")
         self.conversation_id = uuid.uuid4()
-        self.tools = [web_search, read_page]
+        self.tools = [web_search, read_page, read_file]
         self.memory = InMemorySaver()
         self.config = {"configurable": {"thread_id": self.conversation_id}}
         self.agent = self._create_agent(self.model, system_prompts["GENERAL"], tools=self.tools)
-        self.coding_agent = CodingAgent()
+        self.coding_agent = CodingAgent().agent
         self.orchestrator_model = self.model.with_structured_output(
             Decision,
             method="json_schema"
@@ -76,12 +93,67 @@ class LLM():
             checkpointer=self.memory
         )
 
+    def coding_agent_node(self, state: State):
+        print("[DEBUG] >>> CODING NODE ENTERED <<<")
+
+        print("[DEBUG] Original request:",
+            state.get("original_request", "MISSING"))
+
+        print("[DEBUG] Design output exists:",
+            bool(state.get("design_output")))
+
+        print("[DEBUG] Invoking coding agent now...")
+
+        result = self.coding_agent.invoke(
+            {
+                "messages": [
+                    HumanMessage(content=f"""
+    Original request:
+    {state.get("original_request", "")}
+
+    Design specification:
+    {state.get("design_output", "")}
+
+    Implement the requested application. Generate actual code.
+    Do not return another design specification.
+    """)
+                ]
+            },
+            config=self.coding_agent.config,
+        )
+
+        print("[DEBUG] >>> CODING AGENT FINISHED <<<")
+        print("[DEBUG] Response:",
+            result["messages"][-1].content[:500])
+
+        return {"messages": result["messages"]}
+
+    def design_agent_node(self, state: State):
+        print("[DEBUG] >>> DESIGN AGENT CALLED <<<")
+
+        result = self.design_agent.invoke(state)
+
+        # Adapt this extraction to your agent's actual return format.
+        design_output = result.get("design_output", "")
+
+        if not design_output:
+            messages = result.get("messages", [])
+            if messages:
+                design_output = messages[-1].content
+
+        print(f"[DEBUG] Design output captured: {bool(design_output)}")
+
+        return {
+            **result,
+            "design_output": design_output,
+        }
+
     def _build_graph(self):
         graph = StateGraph(State)
 
         graph.add_node("orchestrator_agent", self.run_orchestrator)
-        graph.add_node("coding_agent", self.coding_agent.agent)
-        graph.add_node("design_agent", self.design_agent)
+        graph.add_node("coding_agent", self.coding_agent_node)
+        graph.add_node("design_agent", self.design_agent_node)
         graph.add_node("general_agent", self.agent)
 
         graph.add_edge(START, "orchestrator_agent")
@@ -97,8 +169,14 @@ class LLM():
             },
         )
 
+        graph.add_conditional_edges(
+            "design_agent",
+            after_design, {
+                "CODING": "coding_agent",
+                "ORCHESTRATOR": "orchestrator_agent"
+            }
+        )
         graph.add_edge("coding_agent", "orchestrator_agent")
-        graph.add_edge("design_agent", "orchestrator_agent")
         graph.add_edge("general_agent", "orchestrator_agent")
 
         return graph.compile(checkpointer=self.memory)
@@ -110,8 +188,17 @@ class LLM():
         ])
 
         def to_update(decision: Decision) -> dict:
-            print(f"[DEBUG] Next agent: {decision.next} | task: {decision.task!r}")
-            updates = {"next": decision.next}
+            print(
+                f"[DEBUG] Next agent: {decision.next} | "
+                f"task: {decision.task!r} | "
+                f"needs_coding: {decision.needs_coding}" 
+            )
+
+            updates = {
+                "next": decision.next,
+                "task": decision.task,
+                "needs_coding": decision.needs_coding
+            }
             if decision.next == "FINISH":
                 updates["messages"] = [AIMessage(content=decision.answer)]
             return updates
@@ -155,8 +242,17 @@ class LLM():
         streamed = False
         seen_calls = set()
 
+        initial_state = {
+            "messages": [{"role": "user", "content": query}],
+            "original_request": query,
+            "task": query,
+            "design_output": "",
+            "needs_coding": False,
+            "next": "GENERAL",
+        }
+
         for ns, mode, chunk in self.graph.stream(
-            {"messages": [{"role": "user", "content": query}]},
+            initial_state,
             config=self.config,
             stream_mode=["messages", "updates"],
             subgraphs=True,

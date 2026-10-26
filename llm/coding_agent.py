@@ -22,5 +22,4 @@ class CodingAgent:
             tools=tools,
             checkpointer=self.memory
         )
-
     
